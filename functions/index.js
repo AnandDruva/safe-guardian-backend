@@ -1,44 +1,49 @@
-const functions = require("firebase-functions");
+const express = require("express");
 const admin = require("firebase-admin");
+
 admin.initializeApp();
 
-exports.sendEmergencyNotification = functions.firestore
-  .document("emergencies/{emergencyId}")
-  .onCreate(async (snap, context) => {
+const app = express();
+app.use(express.json());
 
-    const emergency = snap.data();
-    const elderName = emergency.elderName || "Elder";
+// Firestore listener using Admin SDK
+admin.firestore().collection("emergencies")
+  .onSnapshot(snapshot => {
+    snapshot.docChanges().forEach(async change => {
+      if (change.type === "modified") {
+        const data = change.doc.data();
 
-    console.log("🚨 Emergency detected for:", elderName);
+        if (data.status === "ACTIVE") {
+          console.log("🚨 Emergency detected");
 
-    // Get all caregivers
-    const caregiversSnapshot = await admin.firestore()
-        .collection("users")
-        .where("role", "==", "CARE_GIVER")
-        .get();
+          const caregiverId = data.caregiverId;
 
-    const tokens = [];
+          const caregiverDoc = await admin.firestore()
+            .collection("users")
+            .doc(caregiverId)
+            .get();
 
-    caregiversSnapshot.forEach(doc => {
-        const token = doc.data().fcmToken;
-        if (token) tokens.push(token);
-    });
+          const token = caregiverDoc.data().fcmToken;
 
-    if (tokens.length === 0) {
-        console.log("❌ No caregiver tokens found");
-        return null;
-    }
+          if (!token) return;
 
-    const payload = {
-        notification: {
-            title: "🚨 EMERGENCY ALERT",
-            body: `${elderName} needs immediate help!`,
-            sound: "default"
+          await admin.messaging().send({
+            token: token,
+            notification: {
+              title: "🚨 Emergency Alert",
+              body: `${data.elderName} needs help immediately!`
+            }
+          });
+
+          console.log("✅ Notification sent");
         }
-    };
+      }
+    });
+  });
 
-    await admin.messaging().sendToDevice(tokens, payload);
-
-    console.log("✅ Notification sent successfully");
-    return null;
+app.get("/", (req, res) => {
+  res.send("SafeGuardian Backend Running");
 });
+
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`Server running on ${PORT}`));
