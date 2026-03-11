@@ -2,44 +2,59 @@ const express = require("express");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
+const db = admin.firestore();
 
 const app = express();
 app.use(express.json());
 
-// Firestore listener using Admin SDK
-admin.firestore().collection("emergencies")
-  .onSnapshot(snapshot => {
-    snapshot.docChanges().forEach(async change => {
-      if (change.type === "modified") {
-        const data = change.doc.data();
+console.log("🔥 Emergency watcher started");
 
-        if (data.status === "ACTIVE") {
-          console.log("🚨 Emergency detected");
+// Check every 5 seconds for ACTIVE emergencies
+setInterval(async () => {
+  try {
+    const snapshot = await db.collection("emergencies")
+      .where("status", "==", "ACTIVE")
+      .get();
 
-          const caregiverId = data.caregiverId;
+    snapshot.forEach(async (doc) => {
+      const data = doc.data();
 
-          const caregiverDoc = await admin.firestore()
-            .collection("users")
-            .doc(caregiverId)
-            .get();
+      // Avoid sending again
+      if (data.notificationSent) return;
 
-          const token = caregiverDoc.data().fcmToken;
+      console.log("🚨 Emergency detected");
 
-          if (!token) return;
+      const caregiverId = data.caregiverId;
 
-          await admin.messaging().send({
-            token: token,
-            notification: {
-              title: "🚨 Emergency Alert",
-              body: `${data.elderName} needs help immediately!`
-            }
-          });
+      const caregiverDoc = await db.collection("users")
+        .doc(caregiverId)
+        .get();
 
-          console.log("✅ Notification sent");
-        }
+      const token = caregiverDoc.data()?.fcmToken;
+
+      if (!token) {
+        console.log("❌ No FCM token");
+        return;
       }
+
+      await admin.messaging().send({
+        token: token,
+        notification: {
+          title: "🚨 Emergency Alert",
+          body: `${data.elderName} needs help immediately!`
+        }
+      });
+
+      console.log("✅ Notification sent");
+
+      // Mark as sent
+      await doc.ref.update({ notificationSent: true });
     });
-  });
+
+  } catch (err) {
+    console.error(err);
+  }
+}, 5000); // every 5 seconds
 
 app.get("/", (req, res) => {
   res.send("SafeGuardian Backend Running");
