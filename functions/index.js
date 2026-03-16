@@ -1,7 +1,14 @@
 const express = require("express");
 const admin = require("firebase-admin");
 
-admin.initializeApp();
+// 🔐 Load Firebase service account
+const serviceAccount = require("./firebase-key.json");
+
+// 🔥 Initialize Firebase Admin SDK
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
 const db = admin.firestore();
 
 const app = express();
@@ -9,7 +16,7 @@ app.use(express.json());
 
 console.log("🔥 Emergency watcher started");
 
-// Check every 5 seconds
+// ⏱ Check Firestore every 5 seconds
 setInterval(async () => {
 
   try {
@@ -28,7 +35,7 @@ setInterval(async () => {
 
       const data = doc.data();
 
-      // Avoid sending duplicate notifications
+      // 🚫 Avoid duplicate notifications
       if (data.notificationSent === true) {
         continue;
       }
@@ -37,6 +44,7 @@ setInterval(async () => {
 
       const caregiverId = data.caregiverId;
 
+      // 🔎 Fetch caregiver details
       const caregiverDoc = await db
         .collection("users")
         .doc(caregiverId)
@@ -50,10 +58,11 @@ setInterval(async () => {
       const token = caregiverDoc.data().fcmToken;
 
       if (!token) {
-        console.log("❌ No FCM token");
+        console.log("❌ No FCM token found");
         continue;
       }
 
+      // 📲 Send notification
       await admin.messaging().send({
         token: token,
         notification: {
@@ -64,6 +73,7 @@ setInterval(async () => {
 
       console.log("✅ Notification sent");
 
+      // 📝 Mark as notification sent
       await doc.ref.update({
         notificationSent: true
       });
@@ -71,12 +81,13 @@ setInterval(async () => {
     }
 
   } catch (error) {
-    console.error("Error sending notification:", error);
+    console.error("❌ Error sending notification:", error);
   }
 
 }, 5000);
 
 
+// 🌐 Health check endpoint
 app.get("/", (req, res) => {
   res.send("SafeGuardian Backend Running");
 });
@@ -84,5 +95,5 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
-  console.log(`Server running on ${PORT}`);
+  console.log(`🚀 Server running on ${PORT}`);
 });
