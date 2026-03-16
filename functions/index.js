@@ -24,6 +24,8 @@ setInterval(async () => {
       .where("status", "==", "ACTIVE")
       .get();
 
+console.log("Total emergencies:", snapshot.size);
+
     if (snapshot.empty) {
       console.log("No active emergencies");
       return;
@@ -32,6 +34,8 @@ setInterval(async () => {
     for (const doc of snapshot.docs) {
 
       const data = doc.data();
+
+console.log("Total emergencies:", snapshot.size);
 
       // 🚫 Avoid duplicate notifications
       if (data.notificationSent === true) {
